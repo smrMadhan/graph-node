@@ -1695,7 +1695,8 @@ async fn fetch_transaction_and_receipt_from_ethereum_client(
 ) -> anyhow::Result<(Transaction, TransactionReceipt)> {
     let transaction = match eth.transaction(transaction_hash.into()).compat().await {
         Ok(Some(transaction)) => transaction,
-        Err(_) | Ok(None) => bail!("Failed to fetch transaction"),
+        Ok(None) => bail!("Could not find transaction"),
+        Err(error) => bail!("Failed to fetch transaction: {}", error),
     };
 
     let receipt = match eth
@@ -1704,7 +1705,8 @@ async fn fetch_transaction_and_receipt_from_ethereum_client(
         .await
     {
         Ok(Some(receipt)) => receipt,
-        Err(_) | Ok(None) => bail!("Failed to fetch receipt"),
+        Ok(None) => bail!("Could not find transaction receipt"),
+        Err(error) => bail!("Failed to fetch transaction receipt: {}", error),
     };
     Ok((transaction, receipt))
 }
