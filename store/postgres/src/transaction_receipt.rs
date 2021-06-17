@@ -124,6 +124,14 @@ pub(crate) fn drain_vector<const N: usize>(input: Vec<u8>) -> Result<[u8; N], an
     Ok(output)
 }
 
+#[test]
+fn test_drain_vector() {
+    let input = vec![191, 153, 17];
+    let expected_output = [0, 0, 0, 0, 0, 191, 153, 17];
+    let result = drain_vector(input).expect("failed to drain vector into array");
+    assert_eq!(result, expected_output);
+}
+
 impl TryFrom<RawTransactionReceipt> for LightTransactionReceipt {
     type Error = anyhow::Error;
 
