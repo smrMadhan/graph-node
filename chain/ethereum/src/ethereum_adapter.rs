@@ -3,6 +3,7 @@ use ethabi::Token;
 use futures::future;
 use futures::prelude::*;
 use graph::prelude::StopwatchMetrics;
+use graph::semver::Version;
 use graph::{
     blockchain::{block_stream::BlockWithTriggers, BlockPtr, IngestorError},
     prelude::{
@@ -713,26 +714,38 @@ impl EthereumAdapter {
             return Box::new(stream::empty());
         }
 
-        // Hit the database and fetch all failed transactions in the block range.
-        // TODO: handle this Result/expect
-        let mut transaction_statuses_in_block_range = {
+        let mut transaction_statuses_in_block_range = if self.api_version() >= Version::new(0, 0, 0)
+        {
+            // Hit the database and fetch all failed transactions in the block range.
+            // TODO: handle this Result/expect
             stopwatch_metrics.start_section("calls_in_block_range__fetch_transaction_statuses");
-            chain_store
-                .transaction_statuses_in_block_range(&(from..to))
-                .expect("failed to fetch failed transactions in the database")
+            let transaction_statuses = {
+                chain_store
+                    .transaction_statuses_in_block_range(&(from..to))
+                    .expect("failed to fetch failed transactions in the database")
+            };
+            Some(transaction_statuses)
+        } else {
+            None
         };
 
         Box::new(
             eth.trace_stream(&logger, subgraph_metrics, from, to, addresses)
                 .filter(move |trace| {
-                    // TODO: handle this Result/expect
-                    trace_transaction_succeeded(
-                        &trace,
-                        &eth2,
-                        &mut transaction_statuses_in_block_range,
-                        &stopwatch_metrics,
-                    )
-                    .expect("failed to determine if trace's transaction has failed")
+                    if let Some(mut transaction_statuses) =
+                        transaction_statuses_in_block_range.as_mut()
+                    {
+                        trace_transaction_succeeded(
+                            &trace,
+                            &eth2,
+                            &mut transaction_statuses,
+                            &stopwatch_metrics,
+                        )
+                        // TODO: handle this Result/expect
+                        .expect("failed to determine trace's transaction success.")
+                    } else {
+                        true // don't apply this filter
+                    }
                 })
                 .filter_map(|trace| EthereumCall::try_from_trace(&trace))
                 .filter(move |call| {
@@ -815,6 +828,10 @@ impl EthereumAdapter {
 
 #[async_trait]
 impl EthereumAdapterTrait for EthereumAdapter {
+    fn api_version(&self) -> Version {
+        todo!()
+    }
+
     fn url_hostname(&self) -> &str {
         &self.url_hostname
     }
