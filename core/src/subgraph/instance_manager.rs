@@ -5,6 +5,12 @@ use fail::fail_point;
 use graph::components::arweave::ArweaveAdapter;
 use graph::components::three_box::ThreeBoxAdapter;
 use graph::data::subgraph::UnifiedMappingApiVersion;
+use lazy_static::lazy_static;
+use std::collections::{BTreeSet, HashMap};
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
+use tokio::task;
+
 use graph::prelude::{SubgraphInstanceManager as SubgraphInstanceManagerTrait, *};
 use graph::util::lfu_cache::LfuCache;
 use graph::{blockchain::block_stream::BlockStreamMetrics, components::store::WritableStore};
