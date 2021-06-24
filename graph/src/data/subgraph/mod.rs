@@ -15,7 +15,6 @@ use slog::{debug, info, Logger};
 use stable_hash::prelude::*;
 use std::{
     collections::{BTreeSet, HashSet},
-    iter::FromIterator,
     marker::PhantomData,
 };
 use thiserror::Error;
