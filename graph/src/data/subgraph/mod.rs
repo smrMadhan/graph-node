@@ -13,10 +13,7 @@ use serde::ser;
 use serde_yaml;
 use slog::{debug, info, Logger};
 use stable_hash::prelude::*;
-use std::{
-    collections::{BTreeSet, HashSet},
-    marker::PhantomData,
-};
+use std::{collections::BTreeSet, marker::PhantomData};
 use thiserror::Error;
 use wasmparser;
 use web3::types::{Address, H256};
