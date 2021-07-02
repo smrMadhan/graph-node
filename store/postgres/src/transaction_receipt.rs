@@ -32,6 +32,10 @@ impl<'a> QueryFragment<Pg> for TransactionReceiptQuery<'a> {
     ///
     /// ```sql
     /// select
+    ///     ethereum_hex_to_bytea(receipt ->> 'transactionHash') as transaction_hash,
+    ///     ethereum_hex_to_bytea(receipt ->> 'transactionIndex') as transaction_index,
+    ///     ethereum_hex_to_bytea(receipt ->> 'blockHash') as block_hash,
+    ///     ethereum_hex_to_bytea(receipt ->> 'blockNumber') as block_number,
     ///     ethereum_hex_to_bytea(receipt ->> 'gasUsed') as gas_used,
     ///     ethereum_hex_to_bytea(receipt ->> 'status') as status
     /// from (
