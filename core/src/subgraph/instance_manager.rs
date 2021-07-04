@@ -5,12 +5,6 @@ use fail::fail_point;
 use graph::components::arweave::ArweaveAdapter;
 use graph::components::three_box::ThreeBoxAdapter;
 use graph::data::subgraph::UnifiedMappingApiVersion;
-use lazy_static::lazy_static;
-use std::collections::{BTreeSet, HashMap};
-use std::sync::{Arc, RwLock};
-use std::time::Instant;
-use tokio::task;
-
 use graph::prelude::{SubgraphInstanceManager as SubgraphInstanceManagerTrait, *};
 use graph::util::lfu_cache::LfuCache;
 use graph::{blockchain::block_stream::BlockStreamMetrics, components::store::WritableStore};
@@ -29,8 +23,7 @@ use graph::{
 };
 use graph::{components::ethereum::NodeCapabilities, data::store::scalar::Bytes};
 use lazy_static::lazy_static;
-use semver::Version;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use tokio::task;
@@ -359,13 +352,6 @@ where
             .with_context(|| format!("no chain configured for network {}", network))?
             .clone();
 
-        let unified_mapping_api_version = manifest.unified_mapping_api_version()?;
-        let triggers_adapter = chain.triggers_adapter(&deployment, &required_capabilities, unified_mapping_api_version).map_err(|e|
-                anyhow!(
-                "expected triggers adapter that matches deployment {} with required capabilities: {}: {}",
-                &deployment,
-                &required_capabilities, e))?.clone();
-
         // Obtain filters from the manifest
         let filter = C::TriggerFilter::from_data_sources(manifest.data_sources.iter());
         let start_blocks = manifest.start_blocks();
@@ -377,7 +363,8 @@ where
         let stopwatch_metrics =
             StopwatchMetrics::new(logger.clone(), deployment.hash.clone(), registry.clone());
 
-        let triggers_adapter = chain.triggers_adapter(&deployment, &required_capabilities, Arc::new(stopwatch_metrics.clone())).map_err(|e|
+        let unified_mapping_api_version = manifest.unified_mapping_api_version()?;
+        let triggers_adapter = chain.triggers_adapter(&deployment, &required_capabilities, unified_mapping_api_version ,Arc::new(stopwatch_metrics.clone())).map_err(|e|
                 anyhow!(
                 "expected triggers adapter that matches deployment {} with required capabilities: {}: {}",
                 &deployment,
