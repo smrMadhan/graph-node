@@ -1645,10 +1645,16 @@ pub(crate) fn parse_block_triggers(
 }
 
 async fn fetch_receipt_from_ethereum_client(
-    eth: &web3::api::Eth<Transport>,
+    eth: &EthereumAdapter,
     transaction_hash: &H256,
 ) -> anyhow::Result<TransactionReceipt> {
-    let receipt = match eth.transaction_receipt(*transaction_hash).compat().await {
+    let receipt = match eth
+        .web3
+        .eth()
+        .transaction_receipt(*transaction_hash)
+        .compat()
+        .await
+    {
         Ok(Some(receipt)) => receipt,
         Ok(None) => bail!("Could not find transaction receipt"),
         Err(error) => bail!("Failed to fetch transaction receipt: {}", error),
@@ -1658,9 +1664,9 @@ async fn fetch_receipt_from_ethereum_client(
 
 async fn filter_call_triggers_from_unsuccessful_transactions(
     mut block: BlockWithTriggers<crate::Chain>,
-    eth: &web3::api::Eth<Transport>,
     chain_store: Arc<dyn ChainStore>,
 ) -> anyhow::Result<BlockWithTriggers<crate::Chain>> {
+    eth: &EthereumAdapter,
     // First, we separate call triggers from other trigger types
     let calls: Vec<&Arc<EthereumCall>> = block
         .trigger_data
