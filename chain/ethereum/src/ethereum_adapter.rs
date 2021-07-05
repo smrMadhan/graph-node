@@ -1492,8 +1492,8 @@ pub(crate) async fn blocks_with_triggers(
     block_hashes.insert(to_hash);
     triggers_by_block.entry(to).or_insert(Vec::new());
 
-    let mut blocks = adapter
-        .load_blocks(logger1, chain_store, block_hashes)
+    let blocks = adapter
+        .load_blocks(logger1, chain_store.clone(), block_hashes)
         .and_then(
             move |block| match triggers_by_block.remove(&(block.number() as BlockNumber)) {
                 Some(triggers) => Ok(BlockWithTriggers::new(
@@ -1506,10 +1506,17 @@ pub(crate) async fn blocks_with_triggers(
                 )),
             },
         )
-        // .map(|x| filter_call_triggers_from_unsuccessful_transactions(x))
         .collect()
         .compat()
         .await?;
+
+    let section =
+        stopwatch_metrics.start_section("filter_call_triggers_from_unsuccessful_transactions");
+    let futures = blocks.into_iter().map(|block| {
+        filter_call_triggers_from_unsuccessful_transactions(block, &eth, &chain_store)
+    });
+    let mut blocks = futures03::future::try_join_all(futures).await?;
+    section.end();
 
     blocks.sort_by_key(|block| block.ptr().number);
 
@@ -1664,9 +1671,9 @@ async fn fetch_receipt_from_ethereum_client(
 
 async fn filter_call_triggers_from_unsuccessful_transactions(
     mut block: BlockWithTriggers<crate::Chain>,
-    chain_store: Arc<dyn ChainStore>,
-) -> anyhow::Result<BlockWithTriggers<crate::Chain>> {
     eth: &EthereumAdapter,
+    chain_store: &Arc<dyn ChainStore>,
+) -> anyhow::Result<BlockWithTriggers<crate::Chain>> {
     // First, we separate call triggers from other trigger types
     let calls: Vec<&Arc<EthereumCall>> = block
         .trigger_data
@@ -1688,7 +1695,7 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
 
     // And obtain all Transaction values for the calls in this block.
     let transactions: Vec<&Transaction> = {
-        match block.block {
+        match &block.block {
             BlockFinality::Final(_block) => {
                 unreachable!("this function should not be called for dealing with final blocks")
             }
