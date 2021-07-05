@@ -11,7 +11,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::fmt;
 use std::fmt::Display;
-use std::ops::Range;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
@@ -20,6 +19,8 @@ use thiserror::Error;
 use web3::types::{Address, H256};
 
 use crate::blockchain::Blockchain;
+use crate::components::server::index_node::VersionInfo;
+use crate::components::transaction_receipt;
 use crate::data::subgraph::status;
 use crate::data::{store::*, subgraph::Source};
 use crate::prelude::*;
@@ -28,8 +29,6 @@ use crate::{
     blockchain::DataSource,
     data::{query::QueryTarget, subgraph::schema::*},
 };
-
-use crate::components::server::index_node::VersionInfo;
 
 lazy_static! {
     pub static ref SUBSCRIPTION_THROTTLE_INTERVAL: Duration =
@@ -1300,11 +1299,11 @@ pub trait ChainStore: Send + Sync + 'static {
     /// Find the block with `block_hash` and return the network name and number
     fn block_number(&self, block_hash: H256) -> Result<Option<(String, BlockNumber)>, StoreError>;
 
-    /// Tries to build a mapping of transactions statuses for a given block.
-    fn transaction_statuses_in_block_range(
+    /// Tries to retrieve all transactions receipts for a given block.
+    fn transaction_receipts_in_block(
         &self,
-        block_range: &Range<BlockNumber>,
-    ) -> Result<HashMap<H256, bool>, StoreError>;
+        block_ptr: &H256,
+    ) -> Result<Vec<transaction_receipt::LightTransactionReceipt>, StoreError>;
 }
 
 pub trait EthereumCallCache: Send + Sync + 'static {

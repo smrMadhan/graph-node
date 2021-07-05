@@ -49,7 +49,6 @@ pub use data::Storage;
 /// Encapuslate access to the blocks table for a chain.
 mod data {
 
-    use crate::{transaction_gas, transaction_receipt};
     use diesel::{connection::SimpleConnection, insert_into};
     use diesel::{delete, prelude::*, sql_query};
     use diesel::{dsl::sql, pg::PgConnection};
@@ -64,7 +63,13 @@ mod data {
         update,
     };
     use diesel_dynamic_schema as dds;
-    use graph::{constraint_violation, prelude::StoreError};
+    use graph::{
+        constraint_violation,
+        prelude::{
+            transaction_receipt::{find_transaction_receipts_for_block, LightTransactionReceipt},
+            StoreError,
+        },
+    };
 
     use std::collections::HashMap;
     use std::fmt;
@@ -1086,34 +1091,14 @@ mod data {
                 .unwrap();
         }
 
-        /// Delegates to [`transaction_receipt::find_transaction_receipts_for_block_range`].
-        pub(crate) fn find_transaction_receipts_for_block_range(
+        /// Delegates to [`transaction_receipt::find_transaction_receipts_for_block`].
+        pub(crate) fn find_transaction_receipts_for_block(
             &self,
             conn: &PgConnection,
             chain_name: &str,
-            block_range: &Range<BlockNumber>,
-        ) -> anyhow::Result<Vec<transaction_receipt::LightTransactionReceipt>> {
-            transaction_receipt::find_transaction_receipts_for_block_range(
-                conn,
-                chain_name,
-                block_range,
-            )
-        }
-
-        /// Delegates to [`transaction_gas::find_transaction_gas_in_block_range`].
-        pub(crate) fn find_gas_usage_for_transactions_in_block_range(
-            &self,
-            conn: &PgConnection,
-            chain_name: &str,
-            block_hash: &Range<BlockNumber>,
-            transaction_hashes: &[&H256],
-        ) -> anyhow::Result<HashMap<H256, U256>> {
-            transaction_gas::find_transaction_gas_in_block_range(
-                conn,
-                chain_name,
-                transaction_hashes,
-                block_hash,
-            )
+            block_hash: &H256,
+        ) -> anyhow::Result<Vec<LightTransactionReceipt>> {
+            find_transaction_receipts_for_block(conn, chain_name, block_hash)
         }
     }
 }
@@ -1460,16 +1445,14 @@ impl ChainStoreTrait for ChainStore {
     ///
     /// This function will only compare gas exhaustion for transactions when their respective
     /// receipts contain no information about their status.
-    fn transaction_statuses_in_block_range(
+    fn transaction_receipts_in_block(
         &self,
-        block_range: &Range<BlockNumber>,
+        block_hash: &H256,
     ) -> Result<HashMap<H256, bool>, StoreError> {
         let conn = self.get_conn()?;
-        let receipts = self.storage.find_transaction_receipts_for_block_range(
-            &conn,
-            &self.chain,
-            &block_range,
-        )?;
+        let receipts =
+            self.storage
+                .find_transaction_receipts_for_block(&conn, &self.chain, &block_hash)?;
 
         let mut statuses = HashMap::new();
         let mut pending = HashMap::new();

@@ -170,7 +170,7 @@ impl TryFrom<RawTransactionReceipt> for LightTransactionReceipt {
 }
 
 /// Queries the database for all the transaction receipts in a given block range.
-pub fn find_transaction_receipts_for_block_range(
+pub fn find_transaction_receipts_for_block(
     conn: &PgConnection,
     chain_name: &str,
     block_hash: &H256,
