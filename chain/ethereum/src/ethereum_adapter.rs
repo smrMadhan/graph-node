@@ -2,6 +2,7 @@ use ethabi::ParamType;
 use ethabi::Token;
 use futures::future;
 use futures::prelude::*;
+use graph::components::transaction_receipt::LightTransactionReceipt;
 use graph::prelude::StopwatchMetrics;
 use graph::semver::Version;
 use graph::{
@@ -28,7 +29,7 @@ use graph::{
 };
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::sync::Arc;
@@ -1556,6 +1557,7 @@ pub(crate) async fn blocks_with_triggers(
                 )),
             },
         )
+        // .map(|x| filter_call_triggers_from_unsuccessful_transactions(x))
         .collect()
         .compat()
         .await?;
@@ -1755,4 +1757,129 @@ async fn fetch_transaction_and_receipt_from_ethereum_client(
         Err(error) => bail!("Failed to fetch transaction receipt: {}", error),
     };
     Ok((transaction, receipt))
+}
+
+async fn fetch_receipt_from_ethereum_client(
+    eth: &web3::api::Eth<Transport>,
+    transaction_hash: &H256,
+) -> anyhow::Result<TransactionReceipt> {
+    let receipt = match eth.transaction_receipt(*transaction_hash).compat().await {
+        Ok(Some(receipt)) => receipt,
+        Ok(None) => bail!("Could not find transaction receipt"),
+        Err(error) => bail!("Failed to fetch transaction receipt: {}", error),
+    };
+    Ok(receipt)
+}
+
+async fn filter_call_triggers_from_unsuccessful_transactions(
+    mut block: BlockWithTriggers<crate::Chain>,
+    eth: &web3::api::Eth<Transport>,
+    chain_store: Arc<dyn ChainStore>,
+) -> anyhow::Result<BlockWithTriggers<crate::Chain>> {
+    // First, we separate call triggers from other trigger types
+    let calls: Vec<&Arc<EthereumCall>> = block
+        .trigger_data
+        .iter()
+        .filter_map(|trigger| match trigger {
+            EthereumTrigger::Call(call_trigger) => Some(call_trigger),
+            _ => None,
+        })
+        .collect();
+
+    // Then we get the transaction hash for each call
+    let transaction_hashes = calls
+        .iter()
+        .map(|call| call.transaction_hash)
+        .collect::<Option<HashSet<H256>>>()
+        .ok_or(anyhow!(
+            "failed to obtain transaction hash from call triggers"
+        ))?;
+
+    // And obtain all Transaction values for the calls in this block.
+    let transactions: Vec<&Transaction> = {
+        match block.block {
+            BlockFinality::Final(_block) => {
+                unreachable!("this function should not be called for dealing with final blocks")
+            }
+            BlockFinality::NonFinal(ref block_with_calls) => block_with_calls
+                .ethereum_block
+                .block
+                .transactions
+                .iter()
+                .filter(|transaction| transaction_hashes.contains(&transaction.hash))
+                .collect(),
+        }
+    };
+
+    // Confidence check: Did we collect all transactions for the current call triggers?
+    if transactions.len() != transaction_hashes.len() {
+        bail!("failed to find transactions in block for the given call triggers")
+    }
+
+    // We'll also need the receipts for those transactions. In this step we collect all receipts
+    // we have in store for the current block.
+    let mut receipts = chain_store
+        .transaction_receipts_in_block(&block.ptr().hash_as_h256())?
+        .into_iter()
+        .map(|receipt| (receipt.transaction_hash.clone(), receipt))
+        .collect::<HashMap<H256, LightTransactionReceipt>>();
+
+    // Do we have a receipt for each transaction under analysis?
+    let mut receipts_and_transactions: Vec<(&Transaction, LightTransactionReceipt)> = Vec::new();
+    let mut transactions_without_receipt: Vec<&Transaction> = Vec::new();
+    for transaction in transactions.iter() {
+        if let Some(receipt) = receipts.remove(&transaction.hash) {
+            receipts_and_transactions.push((transaction, receipt));
+        } else {
+            transactions_without_receipt.push(transaction);
+        }
+    }
+
+    // When some receipts are missing, we then try to fetch them from our client.
+    if !transactions_without_receipt.is_empty() {
+        for transaction in transactions_without_receipt.into_iter() {
+            let receipt = fetch_receipt_from_ethereum_client(&eth, &transaction.hash).await?;
+            receipts_and_transactions.push((transaction, receipt.into()))
+        }
+    }
+
+    // With all transactions and receipts in hand, we can evaluate the success of each transaction
+    let transaction_success: HashMap<&H256, bool> = {
+        receipts_and_transactions
+            .into_iter()
+            .map(|(transaction, receipt)| {
+                (
+                    &transaction.hash,
+                    is_transaction_succeeded(&transaction, &receipt),
+                )
+            })
+            .collect()
+    };
+
+    // Confidence check: Did we inspect the status of all transactions?
+    if !transaction_hashes
+        .iter()
+        .all(|tx| transaction_success.contains_key(tx))
+    {
+        bail!("Not all transactions status were inspected")
+    }
+
+    // Filter call triggers from unsuccessful transactions
+    block.trigger_data.retain(|trigger| {
+        if let EthereumTrigger::Call(call_trigger) = trigger {
+            // Unwrap: We already checked that those values exist
+            transaction_success[&call_trigger.transaction_hash.unwrap()]
+        } else {
+            // We are not filtering other types of triggers
+            true
+        }
+    });
+    Ok(block)
+}
+
+fn is_transaction_succeeded(
+    _transaction: &Transaction,
+    _receipt: &LightTransactionReceipt,
+) -> bool {
+    todo!("implement this function")
 }

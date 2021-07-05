@@ -192,3 +192,25 @@ pub fn find_transaction_receipts_for_block(
         .map(LightTransactionReceipt::try_from)
         .collect()
 }
+
+impl From<TransactionReceipt> for LightTransactionReceipt {
+    fn from(receipt: TransactionReceipt) -> Self {
+        let TransactionReceipt {
+            transaction_hash,
+            transaction_index,
+            block_hash,
+            block_number,
+            gas_used,
+            status,
+            ..
+        } = receipt;
+        LightTransactionReceipt {
+            transaction_hash,
+            transaction_index,
+            block_hash,
+            block_number,
+            gas_used,
+            status,
+        }
+    }
+}
