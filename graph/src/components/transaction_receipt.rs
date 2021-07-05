@@ -10,15 +10,16 @@ use diesel::{
     pg::{Pg, PgConnection},
     prelude::*,
     query_builder::{Query, QueryFragment},
-    sql_types::{Binary, Integer, Nullable},
+    sql_types::{Binary, Nullable},
 };
-use graph::prelude::{web3::types::*, BlockNumber};
+use diesel_derives::{Queryable, QueryableByName};
 use itertools::Itertools;
-use std::{convert::TryFrom, ops::Range};
+use std::convert::TryFrom;
+use web3::types::*;
 
 /// Parameters for querying for all transaction receipts of a given block.
 struct TransactionReceiptQuery<'a> {
-    block_range: &'a Range<BlockNumber>,
+    block_hash: &'a [u8],
     schema_name: &'a str,
 }
 
@@ -43,7 +44,7 @@ impl<'a> QueryFragment<Pg> for TransactionReceiptQuery<'a> {
     ///         jsonb_array_elements(data -> 'transaction_receipts') as receipt
     ///     from
     ///         $CHAIN_SCHEMA.blocks
-    ///     where number between $FIRST_BLOCK and $LAST BLOCK) as foo;
+    ///     where hash = $BLOCK_HASH) as temp;
     ///```
     fn walk_ast(&self, mut out: diesel::query_builder::AstPass<Pg>) -> QueryResult<()> {
         out.push_sql(
@@ -62,11 +63,9 @@ from (
         out.push_identifier(&self.schema_name)?;
         out.push_sql(".");
         out.push_identifier("blocks")?;
-        out.push_sql(" where number between ");
-        out.push_bind_param::<Integer, _>(&self.block_range.start)?;
-        out.push_sql(" and ");
-        out.push_bind_param::<Integer, _>(&self.block_range.end)?;
-        out.push_sql(") as foo;");
+        out.push_sql(" where hash = ");
+        out.push_bind_param::<Binary, _>(&self.block_hash)?;
+        out.push_sql(") as temp;");
         Ok(())
     }
 }
@@ -102,7 +101,7 @@ struct RawTransactionReceipt {
 }
 
 /// Like web3::types::Receipt, but with fewer fields.
-pub(crate) struct LightTransactionReceipt {
+pub struct LightTransactionReceipt {
     pub transaction_hash: H256,
     pub transaction_index: U64,
     pub block_hash: Option<H256>,
@@ -112,9 +111,12 @@ pub(crate) struct LightTransactionReceipt {
 }
 
 impl LightTransactionReceipt {
-    pub fn is_sucessful(&self) -> bool {
-        // EIP-658
-        matches!(self.status, Some(status) if !status.is_zero())
+    /// `0x0` indicates transaction failure, `0x1` indicates transaction success.
+    /// Set for blocks mined after Byzantium hard fork, `None` before.
+    ///
+    /// Relevant EIPs: 609, 658
+    pub fn is_sucessful(&self) -> Option<bool> {
+        self.status.map(|status| !status.is_zero())
     }
 }
 
@@ -168,14 +170,14 @@ impl TryFrom<RawTransactionReceipt> for LightTransactionReceipt {
 }
 
 /// Queries the database for all the transaction receipts in a given block range.
-pub(crate) fn find_transaction_receipts_for_block_range(
+pub fn find_transaction_receipts_for_block_range(
     conn: &PgConnection,
     chain_name: &str,
-    block_range: &Range<BlockNumber>,
+    block_hash: &H256,
 ) -> anyhow::Result<Vec<LightTransactionReceipt>> {
     let query = TransactionReceiptQuery {
         schema_name: chain_name,
-        block_range,
+        block_hash: block_hash.as_bytes(),
     };
 
     query

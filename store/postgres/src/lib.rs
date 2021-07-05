@@ -47,8 +47,6 @@ mod sql_value;
 mod store;
 mod store_events;
 mod subgraph_store;
-pub(crate) mod transaction_gas;
-pub(crate) mod transaction_receipt;
 
 #[cfg(debug_assertions)]
 pub mod layout_for_tests {
