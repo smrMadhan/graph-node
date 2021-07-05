@@ -29,7 +29,7 @@ use graph::{
 };
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::sync::Arc;
@@ -693,12 +693,8 @@ impl EthereumAdapter {
         from: BlockNumber,
         to: BlockNumber,
         call_filter: &'a EthereumCallFilter,
-        chain_store: Arc<dyn ChainStore>,
-        stopwatch_metrics: &'a Arc<StopwatchMetrics>,
     ) -> Box<dyn Stream<Item = EthereumCall, Error = Error> + Send + 'a> {
-        stopwatch_metrics.start_section("calls_in_block_range");
         let eth = self.clone();
-        let eth2 = eth.clone(); // TODO: figure out how to avoid those clones
 
         let addresses: Vec<H160> = call_filter
             .contract_addresses_function_signatures
@@ -715,39 +711,8 @@ impl EthereumAdapter {
             return Box::new(stream::empty());
         }
 
-        let mut transaction_statuses_in_block_range = if self.api_version() >= Version::new(0, 0, 0)
-        {
-            // Hit the database and fetch all failed transactions in the block range.
-            // TODO: handle this Result/expect
-            stopwatch_metrics.start_section("calls_in_block_range__fetch_transaction_statuses");
-            let transaction_statuses = {
-                chain_store
-                    .transaction_statuses_in_block_range(&(from..to))
-                    .expect("failed to fetch failed transactions in the database")
-            };
-            Some(transaction_statuses)
-        } else {
-            None
-        };
-
         Box::new(
             eth.trace_stream(&logger, subgraph_metrics, from, to, addresses)
-                .filter(move |trace| {
-                    if let Some(mut transaction_statuses) =
-                        transaction_statuses_in_block_range.as_mut()
-                    {
-                        trace_transaction_succeeded(
-                            &trace,
-                            &eth2,
-                            &mut transaction_statuses,
-                            &stopwatch_metrics,
-                        )
-                        // TODO: handle this Result/expect
-                        .expect("failed to determine trace's transaction success.")
-                    } else {
-                        true // don't apply this filter
-                    }
-                })
                 .filter_map(|trace| EthereumCall::try_from_trace(&trace))
                 .filter(move |call| {
                     // `trace_filter` can only filter by calls `to` an address and
@@ -1457,18 +1422,10 @@ pub(crate) async fn blocks_with_triggers(
 
     if !filter.call.is_empty() {
         trigger_futs.push(Box::new(
-            eth.calls_in_block_range(
-                &logger,
-                subgraph_metrics.clone(),
-                from,
-                to,
-                &filter.call,
-                chain_store.clone(),
-                &stopwatch_metrics,
-            )
-            .map(Arc::new)
-            .map(EthereumTrigger::Call)
-            .collect(),
+            eth.calls_in_block_range(&logger, subgraph_metrics.clone(), from, to, &filter.call)
+                .map(Arc::new)
+                .map(EthereumTrigger::Call)
+                .collect(),
         ));
     }
 
@@ -1487,22 +1444,14 @@ pub(crate) async fn blocks_with_triggers(
         // in the block filter, transform the `block_filter` into
         // a `call_filter` and run `blocks_with_calls`
         trigger_futs.push(Box::new(
-            eth.calls_in_block_range(
-                &logger,
-                subgraph_metrics.clone(),
-                from,
-                to,
-                &call_filter,
-                chain_store.clone(),
-                &&stopwatch_metrics,
-            )
-            .map(|call| {
-                EthereumTrigger::Block(
-                    BlockPtr::from(&call),
-                    EthereumBlockTriggerType::WithCallTo(call.to),
-                )
-            })
-            .collect(),
+            eth.calls_in_block_range(&logger, subgraph_metrics.clone(), from, to, &call_filter)
+                .map(|call| {
+                    EthereumTrigger::Block(
+                        BlockPtr::from(&call),
+                        EthereumBlockTriggerType::WithCallTo(call.to),
+                    )
+                })
+                .collect(),
         ));
     }
 
@@ -1693,70 +1642,6 @@ pub(crate) fn parse_block_triggers(
         ));
     }
     triggers
-}
-
-/// Inspects the status for this trace's transaction.
-fn trace_transaction_succeeded(
-    trace: &Trace,
-    eth: &EthereumAdapter,
-    failed_transactions: &mut HashMap<H256, bool>,
-    stopwatch_metrics: &StopwatchMetrics,
-) -> anyhow::Result<bool> {
-    stopwatch_metrics.start_section("calls_in_block_range__trace_transaction_succeeded");
-    let transaction_hash = trace
-        .transaction_hash
-        .ok_or_else(|| anyhow!("Trace has no transaction hash"))?;
-
-    // Check if our store has any track of this transaction status
-    if let Some(status) = failed_transactions.get(&transaction_hash) {
-        return Ok(*status);
-    }
-
-    // If not, check for that transaction's receipt in the external client
-    let (transaction, receipt) = {
-        futures03::executor::block_on(fetch_transaction_and_receipt_from_ethereum_client(
-            &eth.web3.eth(),
-            transaction_hash,
-        ))?
-    };
-
-    // Assume the transaction failed if all gas was used
-    if receipt
-        .gas_used
-        .ok_or(anyhow::anyhow!("Running in light client mode"))?
-        >= transaction.gas
-    {
-        // update our source of truth to prevent future api calls for the same transaction
-        failed_transactions.insert(transaction_hash, false);
-        return Ok(false);
-    }
-
-    let status = matches!(receipt.status, Some(x) if x == web3::types::U64::from(1));
-    // update our source of truth to prevent future api calls for the same transaction
-    failed_transactions.insert(transaction_hash, status);
-    Ok(status)
-}
-
-async fn fetch_transaction_and_receipt_from_ethereum_client(
-    eth: &web3::api::Eth<Transport>,
-    transaction_hash: H256,
-) -> anyhow::Result<(Transaction, TransactionReceipt)> {
-    let transaction = match eth.transaction(transaction_hash.into()).compat().await {
-        Ok(Some(transaction)) => transaction,
-        Ok(None) => bail!("Could not find transaction"),
-        Err(error) => bail!("Failed to fetch transaction: {}", error),
-    };
-
-    let receipt = match eth
-        .transaction_receipt(transaction_hash.into())
-        .compat()
-        .await
-    {
-        Ok(Some(receipt)) => receipt,
-        Ok(None) => bail!("Could not find transaction receipt"),
-        Err(error) => bail!("Failed to fetch transaction receipt: {}", error),
-    };
-    Ok((transaction, receipt))
 }
 
 async fn fetch_receipt_from_ethereum_client(
