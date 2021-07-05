@@ -1844,17 +1844,13 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
     }
 
     // With all transactions and receipts in hand, we can evaluate the success of each transaction
-    let transaction_success: HashMap<&H256, bool> = {
-        receipts_and_transactions
-            .into_iter()
-            .map(|(transaction, receipt)| {
-                (
-                    &transaction.hash,
-                    is_transaction_succeeded(&transaction, &receipt),
-                )
-            })
-            .collect()
-    };
+    let mut transaction_success: HashMap<&H256, bool> = HashMap::new();
+    for (transaction, receipt) in receipts_and_transactions.into_iter() {
+        transaction_success.insert(
+            &transaction.hash,
+            is_transaction_successful(&transaction, &receipt)?,
+        );
+    }
 
     // Confidence check: Did we inspect the status of all transactions?
     if !transaction_hashes
@@ -1877,9 +1873,16 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
     Ok(block)
 }
 
-fn is_transaction_succeeded(
-    _transaction: &Transaction,
-    _receipt: &LightTransactionReceipt,
-) -> bool {
-    todo!("implement this function")
+fn is_transaction_successful(
+    transaction: &Transaction,
+    receipt: &LightTransactionReceipt,
+) -> anyhow::Result<bool> {
+    if let Some(status) = receipt.is_sucessful() {
+        Ok(status)
+    } else {
+        let gas_used = receipt
+            .gas_used
+            .ok_or(anyhow::anyhow!("Running in light client mode"))?;
+        Ok(gas_used >= transaction.gas)
+    }
 }
