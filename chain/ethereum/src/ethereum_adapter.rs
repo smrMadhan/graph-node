@@ -3,6 +3,7 @@ use ethabi::Token;
 use futures::future;
 use futures::prelude::*;
 use graph::components::transaction_receipt::LightTransactionReceipt;
+use graph::data::subgraph::UnifiedMappingApiVersion;
 use graph::prelude::StopwatchMetrics;
 use graph::semver::Version;
 use graph::{
@@ -1389,6 +1390,7 @@ pub(crate) async fn blocks_with_triggers(
     from: BlockNumber,
     to: BlockNumber,
     filter: &TriggerFilter,
+    unified_api_version: UnifiedMappingApiVersion,
 ) -> Result<Vec<BlockWithTriggers<crate::Chain>>, Error> {
     // Each trigger filter needs to be queried for the same block range
     // and the blocks yielded need to be deduped. If any error occurs
@@ -1510,13 +1512,21 @@ pub(crate) async fn blocks_with_triggers(
         .compat()
         .await?;
 
-    let section =
-        stopwatch_metrics.start_section("filter_call_triggers_from_unsuccessful_transactions");
-    let futures = blocks.into_iter().map(|block| {
-        filter_call_triggers_from_unsuccessful_transactions(block, &eth, &chain_store)
-    });
-    let mut blocks = futures03::future::try_join_all(futures).await?;
-    section.end();
+    // Filter out call triggers that come from unsuccessful transactions
+
+    let mut blocks =
+        if unified_api_version.equal_or_greater_than(&graph::data::subgraph::API_VERSION_0_0_5) {
+            let section = stopwatch_metrics
+                .start_section("filter_call_triggers_from_unsuccessful_transactions");
+            let futures = blocks.into_iter().map(|block| {
+                filter_call_triggers_from_unsuccessful_transactions(block, &eth, &chain_store)
+            });
+            let blocks = futures03::future::try_join_all(futures).await?;
+            section.end();
+            blocks
+        } else {
+            blocks
+        };
 
     blocks.sort_by_key(|block| block.ptr().number);
 

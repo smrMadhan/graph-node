@@ -158,7 +158,7 @@ impl Blockchain for Chain {
             eth_adapter,
             stopwatch_metrics,
             chain_store: self.chain_store.cheap_clone(),
-            _unified_api_version: unified_api_version,
+            unified_api_version,
         };
         Ok(Arc::new(adapter))
     }
@@ -341,7 +341,7 @@ pub struct TriggersAdapter {
     stopwatch_metrics: Arc<StopwatchMetrics>,
     chain_store: Arc<dyn ChainStore>,
     eth_adapter: Arc<EthereumAdapter>,
-    _unified_api_version: UnifiedMappingApiVersion,
+    unified_api_version: UnifiedMappingApiVersion,
 }
 
 #[async_trait]
@@ -361,6 +361,7 @@ impl TriggersAdapterTrait<Chain> for TriggersAdapter {
             from,
             to,
             filter,
+            self.unified_api_version.clone(),
         )
         .await
     }
@@ -392,6 +393,7 @@ impl TriggersAdapterTrait<Chain> for TriggersAdapter {
                     block_number,
                     block_number,
                     filter,
+                    self.unified_api_version.clone(),
                 )
                 .await?;
                 assert!(blocks.len() == 1);
