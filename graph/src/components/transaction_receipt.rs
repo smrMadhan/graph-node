@@ -1,8 +1,8 @@
 //! Code for retrieving transaction receipts from the database.
 //!
 //! This module exposes:
-//! 1. the [`find_transaction_receipts_for_block_range`] function, that queries the database and returns
-//!    transaction receipts for a given block range.
+//! 1. the [`find_transaction_receipts_in_block`] function, that queries the database and returns
+//!    transaction receipts present in a given block.
 //! 2. the [`LightTransactionReceipt`] type, which holds basic information about the retrieved
 //!    transaction receipts.
 
@@ -170,7 +170,7 @@ impl TryFrom<RawTransactionReceipt> for LightTransactionReceipt {
 }
 
 /// Queries the database for all the transaction receipts in a given block range.
-pub fn find_transaction_receipts_for_block(
+pub fn find_transaction_receipts_in_block(
     conn: &PgConnection,
     chain_name: &str,
     block_hash: &H256,

@@ -66,7 +66,7 @@ mod data {
     use graph::{
         constraint_violation,
         prelude::{
-            transaction_receipt::{find_transaction_receipts_for_block, LightTransactionReceipt},
+            transaction_receipt::{find_transaction_receipts_in_block, LightTransactionReceipt},
             StoreError,
         },
     };
@@ -1088,14 +1088,14 @@ mod data {
                 .unwrap();
         }
 
-        /// Delegates to [`transaction_receipt::find_transaction_receipts_for_block`].
-        pub(crate) fn find_transaction_receipts_for_block(
+        /// Delegates to [`transaction_receipt::find_transaction_receipts_in_block`].
+        pub(crate) fn find_transaction_receipts_in_block(
             &self,
             conn: &PgConnection,
             chain_name: &str,
             block_hash: &H256,
         ) -> anyhow::Result<Vec<LightTransactionReceipt>> {
-            find_transaction_receipts_for_block(conn, chain_name, block_hash)
+            find_transaction_receipts_in_block(conn, chain_name, block_hash)
         }
     }
 }
@@ -1439,7 +1439,7 @@ impl ChainStoreTrait for ChainStore {
     ) -> Result<Vec<LightTransactionReceipt>, StoreError> {
         let conn = self.get_conn()?;
         self.storage
-            .find_transaction_receipts_for_block(&conn, &self.chain, &block_hash)
+            .find_transaction_receipts_in_block(&conn, &self.chain, &block_hash)
             .map_err(|e| e.into())
     }
 }
