@@ -1696,16 +1696,14 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
     // And obtain all Transaction values for the calls in this block.
     let transactions: Vec<&Transaction> = {
         match &block.block {
-            BlockFinality::Final(_block) => {
-                unreachable!("this function should not be called for dealing with final blocks")
-            }
-            BlockFinality::NonFinal(ref block_with_calls) => block_with_calls
-                .ethereum_block
-                .block
+            BlockFinality::Final(ref block) => block
                 .transactions
                 .iter()
                 .filter(|transaction| transaction_hashes.contains(&transaction.hash))
                 .collect(),
+            BlockFinality::NonFinal(_block_with_calls) => {
+                unreachable!("this function should not be called for dealing with non-final blocks")
+            }
         }
     };
 
