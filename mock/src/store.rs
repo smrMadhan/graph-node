@@ -1,7 +1,5 @@
 use mockall::predicate::*;
 use mockall::*;
-use std::collections::HashMap;
-use std::ops::Range;
 
 use graph::{components::store::DeploymentLocator, prelude::*};
 use web3::types::H256;

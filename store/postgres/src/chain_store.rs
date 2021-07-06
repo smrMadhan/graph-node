@@ -3,7 +3,7 @@ use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, PooledConnection};
 use diesel::sql_types::Text;
 use diesel::{insert_into, update};
-use graph::prelude::web3::types::{H256, U256};
+use graph::prelude::web3::types::H256;
 use graph::{
     constraint_violation,
     prelude::{
@@ -17,12 +17,12 @@ use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
     iter::FromIterator,
-    ops::Range,
     sync::Arc,
 };
 
 use graph::prelude::{
-    BlockNumber, BlockPtr, Error, EthereumBlock, EthereumNetworkIdentifier, LightEthereumBlock,
+    transaction_receipt::LightTransactionReceipt, BlockNumber, BlockPtr, Error, EthereumBlock,
+    EthereumNetworkIdentifier, LightEthereumBlock,
 };
 
 use crate::{
@@ -71,17 +71,14 @@ mod data {
         },
     };
 
-    use std::collections::HashMap;
     use std::fmt;
     use std::iter::FromIterator;
-    use std::ops::Range;
     use std::sync::Arc;
     use std::{convert::TryFrom, io::Write};
 
     use graph::prelude::{
-        serde_json,
-        web3::types::{H256, U256},
-        BlockNumber, BlockPtr, Error, EthereumBlock, LightEthereumBlock,
+        serde_json, web3::types::H256, BlockNumber, BlockPtr, Error, EthereumBlock,
+        LightEthereumBlock,
     };
 
     mod public {
@@ -1436,70 +1433,14 @@ impl ChainStoreTrait for ChainStore {
             .map(|number| (self.chain.clone(), number)))
     }
 
-    /// Tries to obtain transaction statuses for a given block range.
-    ///
-    /// According to EIP-658, there are two ways of checking if a transaction failed:
-    /// 1. by checking if it ran out of gas.
-    /// 2. by looking at its receipt "status" boolean field, which may be absent for blocks before
-    ///    Byzantium fork.
-    ///
-    /// This function will only compare gas exhaustion for transactions when their respective
-    /// receipts contain no information about their status.
     fn transaction_receipts_in_block(
         &self,
         block_hash: &H256,
-    ) -> Result<HashMap<H256, bool>, StoreError> {
+    ) -> Result<Vec<LightTransactionReceipt>, StoreError> {
         let conn = self.get_conn()?;
-        let receipts =
-            self.storage
-                .find_transaction_receipts_for_block(&conn, &self.chain, &block_hash)?;
-
-        let mut statuses = HashMap::new();
-        let mut pending = HashMap::new();
-        for receipt in receipts.into_iter() {
-            match (receipt.status, receipt.gas_used) {
-                (Some(_status), _) => {
-                    statuses.insert(receipt.transaction_hash, receipt.is_sucessful());
-                }
-                (None, Some(gas_used)) => {
-                    pending.insert(receipt.transaction_hash, gas_used);
-                }
-                (None, None) => {
-                    // We don't have information to verify if this transaction was sucessful
-                    statuses.insert(receipt.transaction_hash, false);
-                }
-            }
-        }
-
-        if pending.is_empty() {
-            return Ok(statuses);
-        };
-
-        // If there are pending transactions we then query the store for how much gas they had.
-        let pending_transaction_hashes: Vec<&H256> = pending.keys().into_iter().collect();
-        let transaction_gas: HashMap<H256, U256> = self
-            .storage
-            .find_gas_usage_for_transactions_in_block_range(
-                &conn,
-                &self.chain,
-                block_range,
-                &pending_transaction_hashes,
-            )?;
-
-        for (transaction_hash, gas_used) in pending.into_iter() {
-            match transaction_gas.get(&transaction_hash) {
-                Some(gas) => {
-                    statuses.insert(transaction_hash, gas_used >= *gas);
-                }
-                None => {
-                    return Err(StoreError::Unknown(anyhow::anyhow!(
-                        "Failed to find transaction in block: Transaction Hash = {}",
-                        transaction_hash,
-                    )));
-                }
-            };
-        }
-        Ok(statuses)
+        self.storage
+            .find_transaction_receipts_for_block(&conn, &self.chain, &block_hash)
+            .map_err(|e| e.into())
     }
 }
 

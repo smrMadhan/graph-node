@@ -1787,6 +1787,12 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
     Ok(block)
 }
 
+/// Evaluates if a given transaction was successful.
+///
+/// According to EIP-658, there are two ways of checking if a transaction failed:
+/// 1. by checking if it ran out of gas.
+/// 2. by looking at its receipt "status" boolean field, which may be absent for blocks before
+///    Byzantium fork.
 fn is_transaction_successful(
     transaction: &Transaction,
     receipt: &LightTransactionReceipt,
