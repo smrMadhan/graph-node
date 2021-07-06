@@ -1732,10 +1732,19 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
 
     // When some receipts are missing, we then try to fetch them from our client.
     if !transactions_without_receipt.is_empty() {
-        for transaction in transactions_without_receipt.into_iter() {
-            let receipt = fetch_receipt_from_ethereum_client(&eth, &transaction.hash).await?;
-            receipts_and_transactions.push((transaction, receipt.into()))
-        }
+        let futures = transactions_without_receipt
+            .iter()
+            .map(|transaction| async move {
+                fetch_receipt_from_ethereum_client(&eth, &transaction.hash)
+                    .await
+                    .map(|receipt| (transaction, receipt))
+            });
+        futures03::future::try_join_all(futures.into_iter())
+            .await?
+            .into_iter()
+            .for_each(|(transaction, receipt)| {
+                receipts_and_transactions.push((transaction, receipt.into()))
+            });
     }
 
     // With all transactions and receipts in hand, we can evaluate the success of each transaction
