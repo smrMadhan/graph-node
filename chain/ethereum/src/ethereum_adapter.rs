@@ -5,7 +5,6 @@ use futures::prelude::*;
 use graph::components::transaction_receipt::LightTransactionReceipt;
 use graph::data::subgraph::UnifiedMappingApiVersion;
 use graph::prelude::StopwatchMetrics;
-use graph::semver::Version;
 use graph::{
     blockchain::{block_stream::BlockWithTriggers, BlockPtr, IngestorError},
     prelude::{
@@ -795,10 +794,6 @@ impl EthereumAdapter {
 
 #[async_trait]
 impl EthereumAdapterTrait for EthereumAdapter {
-    fn api_version(&self) -> Version {
-        todo!()
-    }
-
     fn url_hostname(&self) -> &str {
         &self.url_hostname
     }

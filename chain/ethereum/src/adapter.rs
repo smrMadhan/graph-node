@@ -1,7 +1,6 @@
 use anyhow::Error;
 use ethabi::{Error as ABIError, Function, ParamType, Token};
 use futures::Future;
-use graph::semver::Version;
 use mockall::automock;
 use mockall::predicate::*;
 use std::cmp;
@@ -656,8 +655,6 @@ pub trait EthereumAdapter: Send + Sync + 'static {
         call: EthereumContractCall,
         cache: Arc<dyn EthereumCallCache>,
     ) -> Box<dyn Future<Item = Vec<Token>, Error = EthereumContractCallError> + Send>;
-
-    fn api_version(&self) -> Version;
 }
 
 #[cfg(test)]
