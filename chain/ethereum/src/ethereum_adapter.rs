@@ -29,7 +29,7 @@ use graph::{
 };
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeSet, BTreeMap};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::sync::Arc;
@@ -1692,7 +1692,7 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
     let transaction_hashes = calls
         .iter()
         .map(|call| call.transaction_hash)
-        .collect::<Option<HashSet<H256>>>()
+        .collect::<Option<BTreeSet<H256>>>()
         .ok_or(anyhow!(
             "failed to obtain transaction hash from call triggers"
         ))?;
@@ -1722,7 +1722,7 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
         .transaction_receipts_in_block(&block.ptr().hash_as_h256())?
         .into_iter()
         .map(|receipt| (receipt.transaction_hash.clone(), receipt))
-        .collect::<HashMap<H256, LightTransactionReceipt>>();
+        .collect::<BTreeMap<H256, LightTransactionReceipt>>();
 
     // Do we have a receipt for each transaction under analysis?
     let mut receipts_and_transactions: Vec<(&Transaction, LightTransactionReceipt)> = Vec::new();
@@ -1753,7 +1753,7 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
     }
 
     // With all transactions and receipts in hand, we can evaluate the success of each transaction
-    let mut transaction_success: HashMap<&H256, bool> = HashMap::new();
+    let mut transaction_success: BTreeMap<&H256, bool> = BTreeMap::new();
     for (transaction, receipt) in receipts_and_transactions.into_iter() {
         transaction_success.insert(
             &transaction.hash,
