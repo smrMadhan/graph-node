@@ -1655,18 +1655,17 @@ async fn fetch_receipt_from_ethereum_client(
     eth: &EthereumAdapter,
     transaction_hash: &H256,
 ) -> anyhow::Result<TransactionReceipt> {
-    let receipt = match eth
+    match eth
         .web3
         .eth()
         .transaction_receipt(*transaction_hash)
         .compat()
         .await
     {
-        Ok(Some(receipt)) => receipt,
+        Ok(Some(receipt)) => Ok(receipt),
         Ok(None) => bail!("Could not find transaction receipt"),
         Err(error) => bail!("Failed to fetch transaction receipt: {}", error),
-    };
-    Ok(receipt)
+    }
 }
 
 async fn filter_call_triggers_from_unsuccessful_transactions(
