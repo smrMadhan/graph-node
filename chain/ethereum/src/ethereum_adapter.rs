@@ -1706,7 +1706,7 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
                 .filter(|transaction| transaction_hashes.contains(&transaction.hash))
                 .collect(),
             BlockFinality::NonFinal(_block_with_calls) => {
-                unreachable!("this function should not be called for dealing with non-final blocks")
+                unreachable!("this function should not be called when dealing with non-final blocks")
             }
         }
     };
