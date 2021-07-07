@@ -29,7 +29,7 @@ use graph::{
 };
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use std::collections::{HashMap, HashSet, BTreeSet, BTreeMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::sync::Arc;
@@ -1706,7 +1706,9 @@ async fn filter_call_triggers_from_unsuccessful_transactions(
                 .filter(|transaction| transaction_hashes.contains(&transaction.hash))
                 .collect(),
             BlockFinality::NonFinal(_block_with_calls) => {
-                unreachable!("this function should not be called when dealing with non-final blocks")
+                unreachable!(
+                    "this function should not be called when dealing with non-final blocks"
+                )
             }
         }
     };
